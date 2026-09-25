@@ -8,7 +8,7 @@ const root=resolve('.'),port=Number(process.env.PORT||5173);
 const base=process.env.POIXE_BASE_URL||'https://api-eu-central-1-dc8.poixe.com';
 if(!['https://api.poixe.com','https://api-eu-central-1-dc8.poixe.com','https://api-eu-central-1-dc15.poixe.com'].includes(base))throw new Error('Unsupported POIXE_BASE_URL');
 const jobs=new JobService({dir:resolve(process.env.STORY_DATA_DIR||'.local-data/jobs'),key:process.env.POIXE_API_KEY,base});await jobs.init();
-const sweep=setInterval(async()=>{for(const j of jobs.jobs.values()){if(['QUEUED','GENERATING','WAITING_RECOVERY'].includes(j.state)&&Date.now()>j.deadline){j.state='FAILED';j.stage='已超过 30 分钟截止';j.error='生成已停止，原画仍保留。';delete j.pending;await jobs.persist(j);}}},30000);sweep.unref();
+const sweep=setInterval(async()=>{for(const j of jobs.jobs.values()){if(['QUEUED','GENERATING','WAITING_RECOVERY'].includes(j.state)&&Date.now()>j.deadline){j.state='FAILED';j.stage='已超过 30 分钟截止';j.error='生成已停止，原画仍保留。';delete j.pending;delete j.pendingPage1;delete j.pendingPage2;await jobs.persist(j);}}},30000);sweep.unref();
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'};
 const send=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
 async function body(req){let size=0,chunks=[];for await(const chunk of req){size+=chunk.length;if(size>9*1024*1024)throw Object.assign(new Error('请求过大'),{status:413});chunks.push(chunk);}return JSON.parse(Buffer.concat(chunks).toString());}
