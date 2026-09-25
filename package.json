@@ -1,0 +1,13 @@
+{
+  "name": "huahuole-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs",
+    "check": "node --check app.js && node --check server.mjs && node --check backend/jobs.mjs",
+    "ai:configure": "node scripts/configure-poixe.mjs",
+    "test": "node tests/story-plan.test.mjs && node tests/jobs.test.mjs && node tests/poixe-recover.test.mjs"
+  }
+}

@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {parseStoryPlan} from '../backend/story-plan.mjs';
+const result=(content,finish_reason='stop')=>({choices:[{finish_reason,message:{content}}]});
+const plan={characters:'小女孩与太阳',pages:[1,2,3].map(n=>({text:'第'+n+'页：她说“你好”。',prompt:'A girl waves at the sun.'}))};
+assert.deepEqual(parseStoryPlan(result(JSON.stringify(plan))),plan);
+assert.deepEqual(parseStoryPlan(result('```json\n'+JSON.stringify(plan)+'\n```')),plan);
+const truncated=JSON.stringify(plan).slice(0,-20);
+const recovered=parseStoryPlan(result(truncated,'length'));
+assert.deepEqual(recovered.pages.map(p=>p.text),plan.pages.map(p=>p.text));
+assert.equal(recovered.characters,plan.characters);
+assert.throws(()=>parseStoryPlan(result(truncated)));
+assert.throws(()=>parseStoryPlan(result(JSON.stringify(plan).slice(0,60),'length')));
+assert.throws(()=>parseStoryPlan(result(JSON.stringify({...plan,pages:plan.pages.slice(0,2)}))));
+console.log('PASS: complete/fenced JSON, truncated three-caption recovery, incomplete and malformed responses rejected.');
