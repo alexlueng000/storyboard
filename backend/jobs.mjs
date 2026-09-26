@@ -6,7 +6,10 @@ import {createHash,randomUUID} from 'node:crypto';
 const digest=x=>createHash('sha256').update(x).digest('hex');
 const canonical=v=>v&&typeof v==='object'?Array.isArray(v)?v.map(canonical):Object.fromEntries(Object.keys(v).sort().map(k=>[k,canonical(v[k])])):v;
 export class JobService {
- constructor({dir,key,fetchImpl=fetch,base='https://api-eu-central-1-dc8.poixe.com',textModel='gpt-5.2',imageModel='gemini-2.5-flash-image'}){Object.assign(this,{dir,key,fetchImpl,base,textModel,imageModel});this.jobs=new Map();this.running=false;this.closed=false;this.writes=new Map();}
+ constructor({dir,key,fetchImpl=fetch,base='https://api-eu-central-1-dc8.poixe.com',textModel='gpt-5.2',imageModel='gemini-2.5-flash-image',concurrency=2}){Object.assign(this,{dir,key,fetchImpl,base,textModel,imageModel});this.jobs=new Map();if(!Number.isInteger(concurrency)||concurrency<1||concurrency>8)throw new Error('STORY_CONCURRENCY 必须是 1–8 的整数');this.concurrency=concurrency;this.activeJobs=new Set();this.admitting=new Set();this.closed=false;this.writes=new Map();}
+ enqueueTime(){return Math.max(Date.now(),...[...this.jobs.values()].map(j=>j.queuedAt||j.createdAt))+1;}
+ get running(){return this.activeJobs.size>0;}
+ queued(){return [...this.jobs.values()].filter(j=>['QUEUED','GENERATING'].includes(j.state)&&!this.activeJobs.has(j.id)).sort((a,b)=>(a.queuedAt||a.createdAt)-(b.queuedAt||b.createdAt));}
  async init(){await mkdir(this.dir,{recursive:true,mode:0o700});for(const file of await readdir(this.dir)){if(!file.endsWith('.json'))continue;const job=JSON.parse(await readFile(join(this.dir,file),'utf8'));// Restore only complete stories withheld by the former aesthetic review gate.
  if(job.state==='FAILED'&&job.artDirection==='clean-story-scenes-v2'&&job.input&&job.pages?.length===3&&job.pages.every(p=>p.image&&p.text)&&/^本次画面未通过质量检查|^画面检查结果无法读取|^画面检查格式无效/.test(job.error||'')){job.state='READY';job.stage='故事已生成';job.error=null;job.reviewGateRemovedAt=new Date().toISOString();await this.persist(job);}
  this.jobs.set(job.id,job);}this.pump();}
@@ -17,7 +20,7 @@ export class JobService {
  }
  owner(token){if(!/^[a-f0-9]{64}$/.test(token||''))throw Object.assign(new Error('缺少本机访问凭据，请刷新页面。'),{status:401});return digest(token);}
  get(id,token){const j=this.jobs.get(id);if(!j||j.owner!==this.owner(token)||j.state==='DELETED')throw Object.assign(new Error('任务不存在或无权访问。'),{status:404});return j;}
- view(j){return {id:j.id,state:j.state,stage:j.stage,error:j.error||null,createdAt:j.createdAt,model:j.imageModel,calls:j.attempts.map(a=>({stage:a.stage,status:a.status,elapsedMs:a.elapsedMs,usage:a.usage,requestId:a.requestId})),...(j.state==='READY'?{pages:j.pages,setting:j.input.setting,words:j.input.words,sourceImage:j.input.image}:{} )};}
+ view(j){const position=j.state==='QUEUED'?this.queued().findIndex(x=>x.id===j.id)+1:0;return {id:j.id,state:j.state,queuePosition:position,stage:position?`排队中 · 第 ${position} 位`:j.stage,error:j.error||null,createdAt:j.createdAt,model:j.imageModel,calls:j.attempts.map(a=>({stage:a.stage,status:a.status,elapsedMs:a.elapsedMs,usage:a.usage,requestId:a.requestId})),...(j.state==='READY'?{pages:j.pages,setting:j.input.setting,words:j.input.words,sourceImage:j.input.image}:{} )};}
  async create(data,token){const owner=this.owner(token);if(!this.key)throw Object.assign(new Error('服务端未读取到 POIXE_API_KEY，请在配置密钥的终端启动服务。'),{status:503});
  if(!/^[a-f0-9-]{36}$/.test(data.id||'')||data.consent!==true)throw Object.assign(new Error('请先确认 AI 测试告知。'),{status:400});
  const {image,setting,words='',parent=''}=data;
@@ -25,9 +28,8 @@ export class JobService {
  if(typeof image!=='string'||!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(image)||image.length>8*1024*1024)throw Object.assign(new Error('处理图格式无效或过大。'),{status:400});
  const input={image,setting,words,parent};const hash=digest(JSON.stringify(input));
  const existing=this.jobs.get(data.id);if(existing){if(existing.owner!==owner||existing.hash!==hash||existing.state==='DELETED')throw Object.assign(new Error('任务标识冲突。'),{status:409});return this.view(existing);}
- if([...this.jobs.values()].some(j=>!['READY','FAILED','CANCELLED','DELETED'].includes(j.state)))throw Object.assign(new Error('已有生成或待找回任务，请先完成或取消。'),{status:409});
- const j={id:data.id,owner,hash,input,state:'QUEUED',stage:'排队等待',createdAt:Date.now(),deadline:Date.now()+30*60*1000,textModel:this.textModel,imageModel:this.imageModel,artDirection:ART_DIRECTION_VERSION,parallelImages:true,pages:[],attempts:[],consentVersion:'local-ai-test-v1',consentAt:new Date().toISOString()};
- this.jobs.set(j.id,j);await this.persist(j);this.pump();return this.view(j);
+ const j={id:data.id,owner,hash,input,state:'QUEUED',stage:'排队等待',queuedAt:this.enqueueTime(),createdAt:Date.now(),deadline:Date.now()+30*60*1000,textModel:this.textModel,imageModel:this.imageModel,artDirection:ART_DIRECTION_VERSION,parallelImages:true,pages:[],attempts:[],consentVersion:'local-ai-test-v1',consentAt:new Date().toISOString()};
+ this.admitting.add(j.id);this.jobs.set(j.id,j);try{await this.persist(j)}catch(e){this.jobs.delete(j.id);throw e}finally{this.admitting.delete(j.id)}this.pump();return this.view(j);
  }
  active(j){if(['DELETED','CANCELLED','FAILED'].includes(j.state))throw new Error('STOPPED');if(Date.now()>j.deadline)throw new Error('已超过 30 分钟测试截止时间，任务停止；原画不受影响。');}
  async transport(path,body){const r=await this.fetchImpl(this.base+path,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${this.key}`,'x-goog-api-key':this.key,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(240000),redirect:'error'});let json;try{json=await r.json()}catch{throw new Error('响应中断或格式无法读取')};if(!r.ok){const e=new Error(r.status===503?'模型过载，未自动重试。':`模型服务返回 ${r.status}，请查看服务方日志。`);e.definite=r.status>=400&&r.status<500;e.httpStatus=r.status;throw e;}return {json,requestId:r.headers.get('x-request-id')};}
@@ -72,7 +74,14 @@ export class JobService {
  const image=result.candidates?.[0]?.content?.parts?.find(p=>p.inlineData?.data&&/^image\/(png|jpeg|webp)$/.test(p.inlineData.mimeType))?.inlineData;
  if(!image||Buffer.from(image.data,'base64').length<20)throw new Error('模型没有返回可用图片，原画仍保留。');
  j.pages[n]={text:p.text,image:`data:${image.mimeType};base64,${image.data}`};this.consume(j,slot);await this.persist(j);}
- async pump(){if(this.running||this.closed||!this.key)return;this.running=true;try{for(const j of this.jobs.values())if(['QUEUED','GENERATING'].includes(j.state))await this.run(j);}finally{this.running=false;}}
- async resume(id,token){const j=this.get(id,token);if(this.running)return this.view(j);if(j.state!=='WAITING_RECOVERY')return this.view(j);j.state='QUEUED';await this.persist(j);this.pump();return this.view(j);}
+ pump(){
+ if(this.closed||!this.key)return;
+ for(const j of this.queued()){
+ if(this.activeJobs.size>=this.concurrency||this.admitting.has(j.id))break;
+ this.activeJobs.add(j.id);
+ this.run(j).catch(()=>{j.state='FAILED';j.stage='任务保存失败';j.error='服务暂时无法保存任务，请稍后查看。';}).finally(()=>{this.activeJobs.delete(j.id);this.pump();});
+ }
+ }
+ async resume(id,token){const j=this.get(id,token);if(this.activeJobs.has(id)||this.admitting.has(id))return this.view(j);if(j.state!=='WAITING_RECOVERY')return this.view(j);j.state='QUEUED';j.stage='排队找回已有结果';j.queuedAt=this.enqueueTime();this.admitting.add(id);try{await this.persist(j)}finally{this.admitting.delete(id)}this.pump();return this.view(j);}
  async remove(id,token,state='DELETED'){const j=this.get(id,token);j.state=state;j.stage=state==='DELETED'?'已删除':'已取消';delete j.input;delete j.pending;delete j.pendingPage1;delete j.pendingPage2;delete j.plan;j.pages=[];j.attempts=[];await this.persist(j);return {id,state};}
 }

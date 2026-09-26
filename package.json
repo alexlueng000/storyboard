@@ -8,7 +8,7 @@
     "start": "node server.mjs",
     "check": "node --check app.js && node --check server.mjs && node --check backend/jobs.mjs",
     "ai:configure": "node scripts/configure-poixe.mjs",
-    "test": "node tests/story-plan.test.mjs && node tests/jobs.test.mjs && node tests/poixe-recover.test.mjs && node tests/parallel-images.test.mjs",
+    "test": "node tests/story-plan.test.mjs && node tests/jobs.test.mjs && node tests/poixe-recover.test.mjs && node tests/parallel-images.test.mjs && node tests/queue.test.mjs",
     "ai:timings": "node scripts/job-timings.mjs"
   }
 }
