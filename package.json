@@ -1,14 +1,28 @@
 {
-  "name": "huahuole-demo",
+  "name": "huahuole",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node server.mjs",
+    "dev": "node server.mjs --dev",
     "start": "node server.mjs",
-    "check": "node --check app.js && node --check server.mjs && node --check backend/jobs.mjs",
+    "check": "node --check server.mjs && node --check backend/jobs.mjs && node --check lib/storage.js && node --check lib/api.js",
     "ai:configure": "node scripts/configure-poixe.mjs",
     "test": "node tests/story-plan.test.mjs && node tests/jobs.test.mjs && node tests/poixe-recover.test.mjs && node tests/parallel-images.test.mjs && node tests/queue.test.mjs",
-    "ai:timings": "node scripts/job-timings.mjs"
+    "ai:timings": "node scripts/job-timings.mjs",
+    "build": "next build",
+    "test:ui": "node tests/smoke.mjs && node tests/ai-ui.mjs && node tests/startup-ui.mjs && node tests/layout-export.mjs",
+    "format": "prettier --write app components lib next.config.mjs server.mjs tests/*ui.mjs tests/smoke.mjs tests/layout-export.mjs"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "next": "16.3.7",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "prettier": "3.9.9"
   }
 }

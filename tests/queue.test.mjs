@@ -25,13 +25,17 @@ try{
  const inputs=['one','two','waiting','cancel','five'].map(setting=>({id:randomUUID(),image,setting,consent:true}));
  await Promise.all(inputs.map((p,n)=>service.create(p,tokens[n])));
  await until(()=>started.length===2);assert.equal(service.activeJobs.size,2);
+ // Admission is FIFO; two admitted workers may finish their persistence and
+ // reach the provider in either order. Assert each guarantee independently.
+ assert.deepEqual([...service.activeJobs],inputs.slice(0,2).map(input=>input.id));
+ assert.deepEqual(started.slice(0,2).sort(),['one','two']);
  assert.equal(service.view(service.jobs.get(inputs[2].id)).queuePosition,1);
  assert.equal(service.view(service.jobs.get(inputs[4].id)).queuePosition,3);
  assert.throws(()=>service.get(inputs[0].id,tokens[1]),/无权/);
  await service.create(inputs[0],tokens[0]);assert.equal(started.length,2);
  await service.remove(inputs[3].id,tokens[3]);
  gates.one();await until(()=>gates.five);
- assert.deepEqual(started,['one','two','waiting','five']);
+ assert.deepEqual(started.slice(2),['waiting','five']);
  assert.equal(service.jobs.get(inputs[2].id).state,'WAITING_RECOVERY');
  assert.equal(service.activeJobs.size,2,'waiting job releases its slot');
  gates.two();gates.five();await until(()=>!service.running);
