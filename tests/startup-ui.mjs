@@ -48,9 +48,13 @@ try {
     window.setTimeout = (callback, delay, ...args) =>
       original(callback, delay === 12000 ? 100 : delay, ...args);
   });
-  const response = await page.goto("http://localhost:5186", {
-    waitUntil: "domcontentloaded",
-  });
+  const response = await page.goto(
+    "http://localhost:5186/?__startup_retry=test",
+    {
+      waitUntil: "domcontentloaded",
+    },
+  );
+  assert.match(response.headers()["cache-control"], /no-store/);
   const html = await response.text();
   assert.match(html, /小小画册，大大世界/);
   assert.match(html, /<style/);
@@ -120,6 +124,50 @@ try {
   assert.match(tokens[0], /^[a-f0-9]{64}$/);
   assert.equal(tokens[0], tokens[1]);
   assert.deepEqual(pageErrors, []);
+  // One entry chunk fails transiently. Recovery must restore actual interaction,
+  // preserve the anonymous credential, and not simply repaint the static shell.
+  const recovering = pages[0];
+  let blockedChunk = false,
+    recoveredToken,
+    documentRequests = 0;
+  recovering.on("request", (request) => {
+    if (request.url().endsWith("/api/config"))
+      recoveredToken = request.headers()["x-client-token"];
+    if (
+      request.isNavigationRequest() &&
+      request.frame() === recovering.mainFrame()
+    )
+      documentRequests++;
+  });
+  await recovering.route("**/_next/**/*.js", (route) => {
+    if (!blockedChunk) {
+      blockedChunk = true;
+      return route.abort();
+    }
+    return route.continue();
+  });
+  await recovering.reload({ waitUntil: "domcontentloaded" });
+  await recovering
+    .getByRole("button", { name: "留下一幅画", exact: true })
+    .click({ timeout: 15000 });
+  await recovering.getByRole("dialog", { name: "留下一幅小小想象" }).waitFor();
+  assert.equal(await recovering.getByLabel("选择画作").isEnabled(), true);
+  assert.equal(
+    documentRequests,
+    2,
+    "one bounded automatic reload recovers the failed entry chunk",
+  );
+  assert.equal(
+    recoveredToken,
+    tokens[0],
+    "recovery preserves the existing anonymous credential",
+  );
+  assert.equal(
+    new URL(recovering.url()).searchParams.has("__startup_retry"),
+    false,
+  );
+  await recovering.getByRole("button", { name: "关闭", exact: true }).click();
+  await recovering.unroute("**/_next/**/*.js");
   for (const width of [360, 390, 430, 1440]) {
     await pages[0].setViewportSize({ width, height: 844 });
     assert.equal(
@@ -223,7 +271,7 @@ try {
     .waitFor();
   assert.equal(submissions, 0);
   console.log(
-    "PASS: Next SSR with all JS blocked + retry; inline CSS; denied storage; older timeout API; shared credential; 360/390/430/1440 layouts; v1 artwork + token + unfinished job migration without resubmission.",
+    "PASS: transient chunk failure recovers once and New opens editor; Next SSR with all JS blocked + retry; inline CSS; denied storage; older timeout API; shared credential; 360/390/430/1440 layouts; v1 artwork + token + unfinished job migration without resubmission.",
   );
 } finally {
   if (browser) await browser.close();

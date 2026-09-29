@@ -56,7 +56,7 @@ npm run ai:configure
 
 首页在构建时预渲染 HTML，标题、说明、插画和启动状态不依赖客户端脚本先执行。约 26 KB 的页面 CSS 随 HTML 内联（Next 的 `experimental.inlineCss`，依赖已锁定），避免独立样式请求阻塞首屏；不使用外部字体或 CDN。
 
-客户端完成本机画册初始化后启用上传等操作。React 页面与全局错误边界、IndexedDB 超时提示、独立于 React 的加载提示和刷新链接共同处理启动异常。新版本使用 AbortController 管理接口超时；分享绘图不依赖 `CanvasRenderingContext2D.roundRect`。
+客户端完成本机画册初始化后启用上传等操作。React 页面与全局错误边界、IndexedDB 超时提示、独立于 React 的加载提示和刷新链接共同处理启动异常。入口脚本请求失败时仅自动重新加载一次以获取最新资源；再次失败则显示失败资源路径，不循环刷新、不清除本机数据。首页响应禁止缓存，带哈希的构建资源仍由 Next 缓存。新版本使用 AbortController 管理接口超时；分享绘图不依赖 `CanvasRenderingContext2D.roundRect`。
 
 这只能改善页面资源与初始化问题，不能修复 HTML 到达前的 DNS、TLS 或反向代理故障。上次访问域名的 HTTPS 链路问题仍需结合实际手机和服务器日志定位。重构不等于线上白屏已解决。
 
@@ -100,3 +100,16 @@ UI 测试使用独立临时服务、数据目录及浏览器上下文；默认�
 不需要增加登录注册才能邀请测试。但公开试用前仍需完成真实手机访问、真实模型整册生成和保存分享验收，以及匿名调用的总量/预算限制。当前仅有并发上限，没有每日总量或费用熔断；内容审核和供应商完整留存政策尚未完成验证。详见 `tests/RELEASE-REVIEW-2026-09-30.md` 的评估与本次迁移说明。
 
 框架配置参考：[Next.js 安装与运行](https://nextjs.org/docs/app/getting-started/installation)、[自定义常驻服务](https://nextjs.org/docs/app/guides/custom-server)。
+
+## 首页可见但按钮无法使用时
+
+“画册加载中…”表示上传尚未就绪。若脚本加载失败，页面会尝试一次恢复；仍失败时可展开“查看加载详情”查看失败资源路径。
+
+在运行 `npm start` 的服务器上执行以下只读检查，可区分 Node 构建资源问题与域名代理问题：
+
+```sh
+npm run diagnose -- http://127.0.0.1:5173/
+npm run diagnose -- https://huahuole.sidecraftlab.com/
+```
+
+检查仅读取首页及其引用的脚本、插画，不调用模型或读取用户画作。若本机通过、域名失败，检查 HTTPS/代理；若脚本 404 或返回 HTML，检查 `.next` 构建是否完整、进程是否仍使用旧构建、以及代理是否正确转发 `/_next/`。更新代码后必须重新构建并重启进程。

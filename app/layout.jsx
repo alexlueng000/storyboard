@@ -1,4 +1,5 @@
 import "./globals.css";
+import { startupScript } from "../lib/startup-script";
 
 export const metadata = {
   title: "画活了 · 把小小想象，好好收藏",
@@ -11,17 +12,23 @@ export const viewport = {
   themeColor: "#faf8f2",
 };
 
-// Independent of React hydration. If the JS chunks never arrive, the HTML and
-// this retry link remain usable. It never clears data or reloads automatically.
-const startupWatchdog = `setTimeout(function(){if(document.documentElement.dataset.appReady!=='true'){var help=document.getElementById('load-help');if(help)help.hidden=false;}},12000);`;
 export default function RootLayout({ children }) {
   return (
     <html lang="zh-CN">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: startupScript }} />
+      </head>
       <body>
         {children}
         <aside id="load-help" hidden className="load-help" role="status">
-          <p>打开页面比平时慢一些，请检查网络或在系统浏览器中打开。</p>
-          <a href="/">重新打开</a>
+          <p id="load-help-message">页面交互程序正在加载，暂时无法新建画作。</p>
+          <a id="load-help-retry" href="/?__startup_retry=manual">
+            重新加载页面
+          </a>
+          <details>
+            <summary>查看加载详情</summary>
+            <p id="load-help-details" />
+          </details>
           <p>请勿清除网站数据，以免丢失画作。</p>
         </aside>
         <noscript>
@@ -29,7 +36,6 @@ export default function RootLayout({ children }) {
             页面内容已显示。上传、生成和分享需要启用 JavaScript 后使用。
           </p>
         </noscript>
-        <script dangerouslySetInnerHTML={{ __html: startupWatchdog }} />
       </body>
     </html>
   );

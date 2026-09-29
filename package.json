@@ -12,7 +12,8 @@
     "ai:timings": "node scripts/job-timings.mjs",
     "build": "next build",
     "test:ui": "node tests/smoke.mjs && node tests/ai-ui.mjs && node tests/startup-ui.mjs && node tests/layout-export.mjs",
-    "format": "prettier --write app components lib next.config.mjs server.mjs tests/*ui.mjs tests/smoke.mjs tests/layout-export.mjs"
+    "format": "prettier --write app components lib next.config.mjs server.mjs tests/*ui.mjs tests/smoke.mjs tests/layout-export.mjs",
+    "diagnose": "node scripts/check-deployment.mjs"
   },
   "engines": {
     "node": ">=22.0.0"

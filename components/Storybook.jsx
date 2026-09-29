@@ -37,9 +37,22 @@ export default function Storybook() {
   const library = useLibrary(notify),
     { items, ready, error, config, request, update } = library;
   const item = items.find((i) => i.id === activeId);
+  useEffect(() => {
+    document.documentElement.dataset.appHydrated = "true";
+    return () => {
+      delete document.documentElement.dataset.appHydrated;
+    };
+  }, []);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
   useEffect(() => {
-    if (ready) document.documentElement.dataset.appReady = "true";
+    if (ready) {
+      document.documentElement.dataset.appReady = "true";
+      const url = new URL(location.href);
+      if (url.searchParams.has("__startup_retry")) {
+        url.searchParams.delete("__startup_retry");
+        history.replaceState(history.state, "", url);
+      }
+    }
     return () => {
       delete document.documentElement.dataset.appReady;
     };

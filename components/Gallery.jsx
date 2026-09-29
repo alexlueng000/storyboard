@@ -111,8 +111,14 @@ export function Gallery({
               : "收藏孩子的每一笔，也收藏每一笔背后的奇思妙想。"}
           </p>
         </div>
-        <button className="primary" onClick={onNew} disabled={!ready}>
-          <Icon name="plus" size={17} /> 留下一幅画
+        <button
+          className="primary"
+          onClick={onNew}
+          disabled={!ready}
+          aria-label="留下一幅画"
+          aria-busy={!ready}
+        >
+          <Icon name="plus" size={17} /> {ready ? "留下一幅画" : "画册加载中…"}
         </button>
       </section>
       {tab === "album" && (

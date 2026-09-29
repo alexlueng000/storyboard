@@ -131,6 +131,9 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(308, { Location: "/" });
         return res.end();
       }
+      // A cached document can refer to chunks from a retired build. Keep HTML
+      // fresh while Next continues to cache content-hashed static chunks.
+      if (path === "/") res.setHeader("Cache-Control", "no-store");
       return await handle(req, res);
     }
     res.writeHead(404);
